@@ -1,0 +1,28 @@
+# CARPETAS QUE NO DEBEN IR A GITHUB
+entorno/
+entorno310/
+entorno_sound/
+recordings/
+results/
+models/
+
+# MACOS
+.DS_Store
+
+# PYTHON
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# VS CODE
+.vscode/
+
+# ARCHIVOS GRANDES O TEMPORALES
+*.wav
+*.mp3
+*.csv
+*.html
+
+# OUTPUTS
+*/__pycache__/
