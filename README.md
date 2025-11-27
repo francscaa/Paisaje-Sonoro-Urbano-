@@ -1,16 +1,4 @@
-¡Perfecto Fran!
-Te preparo un **README profesional, claro, bonito y completo**, ideal para tu proyecto de análisis de paisaje sonoro urbano.
-Incluye: descripción, instalación, uso, estructura del repo, ejemplos, y notas técnicas.
-
-Si luego quieres, puedo agregar **logos, badges, GIFs, capturas, citaciones académicas, referencias** o lo que necesites para la memoria.
-
----
-
 # 📄 **README.md — Paisaje Sonoro Urbano**
-
-Aquí tienes la primera versión:
-
----
 
 ```markdown
 # 🎧 Paisaje Sonoro Urbano — Sistema de Análisis Acústico
