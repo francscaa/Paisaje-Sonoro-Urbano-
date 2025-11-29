@@ -6,13 +6,23 @@ from pathlib import Path
 import pandas as pd
 
 from analysis.iso_proxies import aggregate_by_recording, compute_iso_proxies
+from analysis.spatial_perceptual import compute_perceptual_space, compute_spatial_clusters, join_space_perceptual
 from audio_processing.load_audio import select_files
 from audio_processing.pipeline import process_audios
 from audio_processing.yamnet_classifier import load_yamnet_model
-from config import DEFAULT_MODEL_HANDLE, RECORDINGS_CSV, SEGMENT_CSV, TFHUB_CACHE_DIR
+from config import DEFAULT_MODEL_HANDLE, PLOT_DIR, RECORDINGS_CSV, RESULTS_DIR, SEGMENT_CSV, TFHUB_CACHE_DIR
 from gps_utils.load_gps import load_gps, pick_gps_file
 from gps_utils.sync_gps import sync_audio_gps
 from visualization import plots_iso, plots_psico, plots_yamnet
+from visualization.export_geo_advanced import export_geojson_clusters, export_geojson_heatmap
+from visualization.export_gis import export_csv_gis, export_geojson_linestring, export_geojson_points
+from visualization.plot_advanced import (
+    plot_perceptual_map,
+    plot_spatial_clusters,
+    plot_spatial_heatmap,
+    plot_spatial_perceptual,
+)
+from visualization.plot_spatial import plot_route_colored_by_class, plot_route_colored_by_descriptor
 
 
 def parse_args() -> argparse.Namespace:
@@ -112,8 +122,29 @@ def main() -> None:
             df_seg = sync_audio_gps(df_seg, df_gps)
         df_seg.to_csv(SEGMENT_CSV, index=False)
 
+    gis_ready = RESULTS_DIR / "gis_ready.csv"
+    geo_points = RESULTS_DIR / "gis_points.geojson"
+    geo_route = RESULTS_DIR / "gis_route.geojson"
+    export_csv_gis(df_seg, gis_ready)
+    export_geojson_points(df_seg, geo_points)
+    export_geojson_linestring(df_seg, geo_route)
+    plot_route_colored_by_descriptor(df_seg, "loudness_sones", PLOT_DIR / "route_loudness.png")
+    plot_route_colored_by_class(df_seg, PLOT_DIR / "route_classes.png")
+
     df = compute_iso_proxies(df_seg)
+    df = join_space_perceptual(df)
+    df = compute_spatial_clusters(df, method="kmeans")
     df_rec = aggregate_by_recording(df)
+
+    # Visualizaciones avanzadas
+    plot_perceptual_map(df, PLOT_DIR / "perceptual_map_clusters.png")
+    plot_spatial_heatmap(df, "loudness_sones", PLOT_DIR / "spatial_heatmap_loudness.png")
+    plot_spatial_clusters(df, PLOT_DIR / "spatial_clusters.png")
+    plot_spatial_perceptual(df, PLOT_DIR / "spatial_perceptual.png")
+
+    # Exportaciones GeoJSON avanzadas
+    export_geojson_clusters(df, RESULTS_DIR / "gis_clusters.geojson")
+    export_geojson_heatmap(df, "loudness_sones", RESULTS_DIR / "gis_heatmap_loudness.geojson")
 
     RECORDINGS_CSV.parent.mkdir(parents=True, exist_ok=True)
     df_rec.to_csv(RECORDINGS_CSV, index=False)
