@@ -48,7 +48,7 @@ def _patch_numpy_printoptions() -> None:
 
 _patch_numpy_printoptions()
 try:
-    from soundscapy.plotting import SoundscapePlot, LocationComparisons
+    from soundscapy.plotting import Backend, density_plot, scatter_plot
     HAS_SOUNDSCAPY_PLOTS = True
 except Exception:
     HAS_SOUNDSCAPY_PLOTS = False
@@ -467,12 +467,18 @@ def plot_perceptual(df: pd.DataFrame, df_rec: pd.DataFrame) -> list[Path]:
 def plot_soundscape(df_rec: pd.DataFrame) -> Path | None:
     if df_rec.empty or not HAS_SOUNDSCAPY_PLOTS:
         return None
-    df_s = df_rec.rename(columns={"P_iso": "P", "E_iso": "E"}).copy()
+    df_s = df_rec.rename(columns={"P_iso": "ISOPleasant", "E_iso": "ISOEventful"}).copy()
     df_s["LocationID"] = df_s["Recording"]
     out_path = PLOT_DIR / "soundscapy_lugares.png"
-    plot = SoundscapePlot(df_s, P="P", E="E", LocationID="LocationID", figsize=(8, 6),
-                          title="Comparacion perceptual de grabaciones (proxy)")
-    fig = plot.plot()
+    ax = scatter_plot(
+        df_s,
+        x="ISOPleasant",
+        y="ISOEventful",
+        hue="LocationID",
+        title="Comparacion perceptual de grabaciones (proxy)",
+        backend=Backend.SEABORN,
+    )
+    fig = ax.get_figure() if hasattr(ax, "get_figure") else ax
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
     return out_path
@@ -481,10 +487,18 @@ def plot_soundscape(df_rec: pd.DataFrame) -> Path | None:
 def plot_location_comparisons(df_rec: pd.DataFrame) -> Path | None:
     if df_rec.shape[0] < 2 or not HAS_SOUNDSCAPY_PLOTS:
         return None
-    df_s = df_rec.rename(columns={"P_iso": "P", "E_iso": "E"}).copy()
+    df_s = df_rec.rename(columns={"P_iso": "ISOPleasant", "E_iso": "ISOEventful"}).copy()
     df_s["LocationID"] = df_s["Recording"]
     out_path = PLOT_DIR / "soundscapy_lugares_multiple.png"
-    fig = LocationComparisons(df_s, P="P", E="E", LocationID="LocationID", figsize=(12, 8)).plot()
+    ax = density_plot(
+        df_s,
+        x="ISOPleasant",
+        y="ISOEventful",
+        hue="LocationID",
+        title="Comparacion perceptual por audio (Soundscapy)",
+        backend=Backend.SEABORN,
+    )
+    fig = ax.get_figure() if hasattr(ax, "get_figure") else ax
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
     return out_path
