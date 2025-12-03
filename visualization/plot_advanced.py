@@ -35,6 +35,8 @@ def plot_spatial_heatmap(df: pd.DataFrame, value: str, path: Path) -> Path:
         return path
     path.parent.mkdir(parents=True, exist_ok=True)
     plt.figure(figsize=(8, 6))
+    ax = plt.gca()
+    ax.ticklabel_format(useOffset=False, style="plain")  # Mostrar coordenadas completas sin offset científico
     sns.kdeplot(data=data, x="lon", y="lat", weights=data[value], fill=True, cmap="magma", thresh=0.05, alpha=0.8)
     plt.scatter(data["lon"], data["lat"], s=10, c="white", alpha=0.3)
     plt.xlabel("Lon")
