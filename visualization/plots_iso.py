@@ -7,9 +7,9 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
+import config
 from analysis.clustering import assign_clusters
 from analysis.correlations import correlation_matrix
-from config import PLOT_DIR
 
 try:
     from soundscapy.plotting import Backend, density_plot, scatter_plot
@@ -20,7 +20,7 @@ except Exception:
 
 
 def plot_correlations(df: pd.DataFrame) -> Path:
-    out_path = PLOT_DIR / "correlaciones.png"
+    out_path = config.PLOT_DIR / "correlaciones.png"
     corr = correlation_matrix(df)
     plt.figure(figsize=(8, 6))
     sns.heatmap(corr, annot=True, fmt=".2f", cmap="coolwarm", square=True)
@@ -32,7 +32,7 @@ def plot_correlations(df: pd.DataFrame) -> Path:
 
 
 def plot_clusters(df: pd.DataFrame) -> Path:
-    out_path = PLOT_DIR / "clusters_psico.png"
+    out_path = config.PLOT_DIR / "clusters_psico.png"
     labels = assign_clusters(df)
     if labels.size == 0:
         return out_path
@@ -50,7 +50,7 @@ def plot_clusters(df: pd.DataFrame) -> Path:
 
 def plot_perceptual(df: pd.DataFrame, df_rec: pd.DataFrame) -> list[Path]:
     out_paths: list[Path] = []
-    out_seg = PLOT_DIR / "perceptual_segmentos.png"
+    out_seg = config.PLOT_DIR / "perceptual_segmentos.png"
     plt.figure(figsize=(8, 6))
     plt.scatter(df["P_iso"], df["E_iso"], c=df["Probabilidad"], cmap="viridis", alpha=0.6)
     plt.xlabel("P_iso (proxy)")
@@ -63,7 +63,7 @@ def plot_perceptual(df: pd.DataFrame, df_rec: pd.DataFrame) -> list[Path]:
     plt.close()
     out_paths.append(out_seg)
 
-    out_rec = PLOT_DIR / "perceptual_recordings.png"
+    out_rec = config.PLOT_DIR / "perceptual_recordings.png"
     plt.figure(figsize=(8, 6))
     plt.scatter(df_rec["P_iso"], df_rec["E_iso"], s=120, alpha=0.9)
     for _, row in df_rec.iterrows():
@@ -84,7 +84,7 @@ def plot_soundscape(df_rec: pd.DataFrame) -> Path | None:
         return None
     df_s = df_rec.rename(columns={"P_iso": "ISOPleasant", "E_iso": "ISOEventful"}).copy()
     df_s["LocationID"] = df_s["Recording"]
-    out_path = PLOT_DIR / "soundscapy_lugares.png"
+    out_path = config.PLOT_DIR / "soundscapy_lugares.png"
     ax = scatter_plot(
         df_s,
         x="ISOPleasant",
@@ -104,7 +104,7 @@ def plot_location_comparisons(df_rec: pd.DataFrame) -> Path | None:
         return None
     df_s = df_rec.rename(columns={"P_iso": "ISOPleasant", "E_iso": "ISOEventful"}).copy()
     df_s["LocationID"] = df_s["Recording"]
-    out_path = PLOT_DIR / "soundscapy_lugares_multiple.png"
+    out_path = config.PLOT_DIR / "soundscapy_lugares_multiple.png"
     ax = density_plot(
         df_s,
         x="ISOPleasant",
@@ -122,7 +122,7 @@ def plot_location_comparisons(df_rec: pd.DataFrame) -> Path | None:
 def plot_soundscape_fallback(df_rec: pd.DataFrame) -> Path | None:
     if df_rec.empty:
         return None
-    out_path = PLOT_DIR / "soundscapy_lugares_fallback.png"
+    out_path = config.PLOT_DIR / "soundscapy_lugares_fallback.png"
     plt.figure(figsize=(8, 6))
     plt.scatter(df_rec["P_iso"], df_rec["E_iso"], s=120, alpha=0.9)
     for _, row in df_rec.iterrows():
@@ -140,7 +140,7 @@ def plot_soundscape_fallback(df_rec: pd.DataFrame) -> Path | None:
 def plot_location_comparisons_fallback(df_rec: pd.DataFrame) -> Path | None:
     if df_rec.shape[0] < 2:
         return None
-    out_path = PLOT_DIR / "soundscapy_lugares_multiple_fallback.png"
+    out_path = config.PLOT_DIR / "soundscapy_lugares_multiple_fallback.png"
     plt.figure(figsize=(10, 6))
     plt.scatter(df_rec["P_iso"], df_rec["E_iso"], s=120, alpha=0.9)
     for _, row in df_rec.iterrows():

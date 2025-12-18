@@ -6,11 +6,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from config import DESCRIPTORS, PLOT_DIR, RESULTS_DIR
+import config
+from config import DESCRIPTORS
 
 
 def plot_sources(df: pd.DataFrame) -> Path:
-    out_path = PLOT_DIR / "yamnet_fuentes_scatter.png"
+    out_path = config.PLOT_DIR / "yamnet_fuentes_scatter.png"
     plt.figure(figsize=(12, 6))
     factor, labels = pd.factorize(df["Clase_YAMNet"])
     scatter = plt.scatter(df["Timestamp"], df["Probabilidad"], c=factor, cmap="tab20", alpha=0.8)
@@ -27,15 +28,15 @@ def plot_sources(df: pd.DataFrame) -> Path:
 
 
 def plot_fuentes_loudness(df_seg: pd.DataFrame) -> Path:
-    out_path = PLOT_DIR / "yamnet_fuentes_loudness.png"
+    out_path = config.PLOT_DIR / "yamnet_fuentes_loudness.png"
     cols = [d for d in DESCRIPTORS if d in df_seg.columns]
     df_fuentes = (
         df_seg.groupby("Clase_YAMNet")[cols]
         .mean()
         .sort_values(by="loudness_sones", ascending=False)
     )
-    (RESULTS_DIR / "yamnet_fuentes_psico.csv").parent.mkdir(parents=True, exist_ok=True)
-    df_fuentes.to_csv(RESULTS_DIR / "yamnet_fuentes_psico.csv")
+    (config.RESULTS_DIR / "yamnet_fuentes_psico.csv").parent.mkdir(parents=True, exist_ok=True)
+    df_fuentes.to_csv(config.RESULTS_DIR / "yamnet_fuentes_psico.csv")
     df_fuentes.head(10).plot(kind="bar", figsize=(14, 6))
     plt.title("Fuentes YAMNet ordenadas por loudness (top 10)")
     plt.tight_layout()

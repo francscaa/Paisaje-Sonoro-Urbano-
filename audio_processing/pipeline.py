@@ -6,11 +6,11 @@ from typing import List
 import numpy as np
 import pandas as pd
 
+import config
 from audio_processing.load_audio import load_audio_file
 from audio_processing.psycho_features import compute_psycho
 from audio_processing.segmentation import segment_audio
 from audio_processing.yamnet_classifier import predict_top_class
-from config import SEGMENT_CSV
 
 
 def process_segment(
@@ -41,7 +41,7 @@ def process_audios(audio_paths: list[Path], window: float, hop: float, model, cl
     if not results:
         raise SystemExit("No se pudieron procesar segmentos.")
     df = pd.DataFrame(results)
-    out_csv = SEGMENT_CSV
+    out_csv = config.SEGMENT_CSV
     out_csv.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(out_csv, index=False)
     print(f"\nCSV segmentado guardado en: {out_csv}")

@@ -6,11 +6,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from config import DESCRIPTORS, PLOT_DIR
+import config
+from config import DESCRIPTORS
 
 
 def plot_descriptor_bars(df: pd.DataFrame) -> Path:
-    out_path = PLOT_DIR / "fuentes_por_descriptor.png"
+    out_path = config.PLOT_DIR / "fuentes_por_descriptor.png"
     top = (
         df.groupby("Clase_YAMNet")[DESCRIPTORS]
         .mean()
@@ -29,7 +30,7 @@ def plot_descriptor_bars(df: pd.DataFrame) -> Path:
 def plot_compare_recordings(df_rec: pd.DataFrame) -> Path | None:
     if df_rec.shape[0] < 2:
         return None
-    out_path = PLOT_DIR / "comparacion_recordings_psico.png"
+    out_path = config.PLOT_DIR / "comparacion_recordings_psico.png"
     x = np.arange(len(df_rec["Recording"]))
     width = 0.2
     plt.figure(figsize=(10, 6))
