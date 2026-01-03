@@ -138,6 +138,7 @@ def main() -> None:
             model, class_names = load_yamnet_model(handle, args.hub_cache)
             df_seg = process_audios(audio_paths, args.window, hop, model, class_names)
 
+    run_slug = config.RUN_DIR.name
     gps_path = pick_gps_file(args.gps)
     if gps_path:
         df_gps = load_gps(gps_path)
@@ -145,7 +146,8 @@ def main() -> None:
             df_seg = sync_audio_gps(df_seg, df_gps)
         df_seg.to_csv(segment_csv, index=False)
 
-    gis_ready = config.RESULTS_DIR / f"gis_ready_{run_name}.csv"
+    # Salidas GIS viven junto al resto de resultados de la corrida: results/<nombre_audio>/
+    gis_ready = config.RESULTS_DIR / f"gis_ready_{run_slug}.csv"
     geo_points = config.RESULTS_DIR / "gis_points.geojson"
     geo_route = config.RESULTS_DIR / "gis_route.geojson"
     export_csv_gis(df_seg, gis_ready)
@@ -174,8 +176,6 @@ def main() -> None:
 
     plots: list[Path] = []
     plots.append(plots_yamnet.plot_sources(df))
-    plots.append(plots_yamnet.plot_fuentes_loudness(df_seg))
-    plots.append(plots_psico.plot_descriptor_bars(df))
     pc = plots_psico.plot_compare_recordings(df_rec)
     if pc:
         plots.append(pc)
