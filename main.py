@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Iterable
 
 import pandas as pd
+import numpy as np
 
 import config
 from analysis.iso_proxies import aggregate_by_recording, compute_iso_proxies
@@ -14,6 +15,7 @@ from audio_processing.pipeline import process_audios
 from audio_processing.yamnet_classifier import load_yamnet_model
 from gps_utils.load_gps import load_gps, pick_gps_file
 from gps_utils.sync_gps import sync_audio_gps
+from gps_utils.uts import aggregate_by_uts, assign_uts_id
 from visualization import plots_iso, plots_psico, plots_yamnet
 from visualization.export_geo_advanced import export_geojson_clusters, export_geojson_heatmap
 from visualization.export_gis import export_csv_gis, export_geojson_linestring, export_geojson_points
@@ -61,6 +63,24 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="Ruta a archivo GeoJSON/GPX/KML para sincronizar GPS con segmentos (opcional).",
     )
+    parser.add_argument(
+        "--uts-meters",
+        type=float,
+        default=30.0,
+        help="Longitud del tramo UTS en metros (ej: 30, 50, 100).",
+    )
+    parser.add_argument(
+        "--compare-uts-a",
+        type=Path,
+        default=None,
+        help="Ruta a yamnet_psico_uts.csv del recorrido A (ej: mañana).",
+    )
+    parser.add_argument(
+        "--compare-uts-b",
+        type=Path,
+        default=None,
+        help="Ruta a yamnet_psico_uts.csv del recorrido B (ej: noche).",
+    )
     return parser.parse_args()
 
 
@@ -103,6 +123,119 @@ def pick_run_name(audio_paths: Iterable[Path] | None, csv_path: Path | None) -> 
     return "run"
 
 
+def prepare_uts_for_spatial(df_uts: pd.DataFrame) -> pd.DataFrame:
+    """Mapea columnas de agregados UTS a las esperadas por funciones espaciales."""
+    out = df_uts.copy()
+    # Usa el centroide como lat/lon
+    if "lat_uts" in out.columns:
+        out["lat"] = out["lat_uts"]
+    elif "lat_mean" in out.columns:
+        out["lat"] = out["lat_mean"]
+    if "lon_uts" in out.columns:
+        out["lon"] = out["lon_uts"]
+    elif "lon_mean" in out.columns:
+        out["lon"] = out["lon_mean"]
+    # Usa promedios MOSQITO como columnas base para proxies y clusters
+    for d in config.DESCRIPTORS:
+        mean_col = f"{d}_mean"
+        if mean_col in out.columns:
+            out[d] = out[mean_col]
+    if "distancia_m_mean" in out.columns:
+        out["distancia_m"] = out["distancia_m_mean"]
+    # Orden para ploteo si no hay tiempo real
+    if "Timestamp" not in out.columns:
+        out["Timestamp"] = out.get("uts_id")
+    return out
+
+
+def compare_uts(
+    uts_a: pd.DataFrame, uts_b: pd.DataFrame, label_a: str, label_b: str, plots_dir: Path, out_csv: Path
+) -> pd.DataFrame:
+    """Alinea por uts_id y calcula deltas entre dos recorridos."""
+    if uts_a.empty or uts_b.empty:
+        print("[aviso] UTS vacíos para comparar.")
+        return pd.DataFrame()
+    df_a = uts_a.copy()
+    df_b = uts_b.copy()
+    suffixes = (f"_{label_a}", f"_{label_b}")
+    merged = pd.merge(df_a, df_b, on="uts_id", how="outer", suffixes=suffixes)
+
+    # Distancia de referencia: promedio de ambas columnas si existen, si no usa uts_id
+    dist_cols = []
+    for suf in suffixes:
+        col = f"distancia_m_mean{suf}"
+        if col in merged.columns:
+            dist_cols.append(col)
+    if dist_cols:
+        merged["distancia_m_ref"] = merged[dist_cols].mean(axis=1, skipna=True)
+    else:
+        merged["distancia_m_ref"] = merged["uts_id"]
+
+    # Deltas para descriptores
+    for d in config.DESCRIPTORS:
+        col_a = f"{d}_mean{suffixes[0]}"
+        col_b = f"{d}_mean{suffixes[1]}"
+        if col_a not in merged or col_b not in merged:
+            merged[f"delta_{d}"] = pd.NA
+            continue
+        merged[f"delta_{d}"] = pd.to_numeric(merged[col_a], errors="coerce") - pd.to_numeric(
+            merged[col_b], errors="coerce"
+        )
+
+    # Coordenadas promedio para mapa
+    lat_cols = [f"lat_mean{s}" for s in suffixes if f"lat_mean{s}" in merged]
+    lon_cols = [f"lon_mean{s}" for s in suffixes if f"lon_mean{s}" in merged]
+    if lat_cols:
+        merged["lat_mean_avg"] = merged[lat_cols].mean(axis=1, skipna=True)
+    if lon_cols:
+        merged["lon_mean_avg"] = merged[lon_cols].mean(axis=1, skipna=True)
+
+    # Export CSV
+    out_csv.parent.mkdir(parents=True, exist_ok=True)
+    merged.to_csv(out_csv, index=False)
+
+    # Plots de delta
+    plots_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        import matplotlib.pyplot as plt
+    except Exception:
+        print("[aviso] matplotlib no disponible para plot de comparación.")
+        return merged
+
+    # (1) Línea delta vs distancia (todas las métricas)
+    sorted_df = merged.sort_values("distancia_m_ref")
+    plt.figure(figsize=(8, 5))
+    for d in config.DESCRIPTORS:
+        delta_col = f"delta_{d}"
+        if delta_col not in sorted_df:
+            continue
+        plt.plot(sorted_df["distancia_m_ref"], sorted_df[delta_col], marker="o", label=delta_col)
+    plt.axhline(0, color="gray", linestyle="--", linewidth=1)
+    plt.xlabel("Distancia (m, ref)")
+    plt.ylabel("Delta (A - B)")
+    plt.title(f"Deltas por UTS ({label_a} - {label_b})")
+    plt.legend(fontsize="small")
+    plt.tight_layout()
+    plt.savefig(plots_dir / "delta_vs_distancia.png", dpi=150)
+    plt.close()
+
+    # (2) Mapa delta_loudness
+    if "lat_mean_avg" in sorted_df and "lon_mean_avg" in sorted_df:
+        plt.figure(figsize=(8, 6))
+        sc = plt.scatter(
+            sorted_df["lon_mean_avg"], sorted_df["lat_mean_avg"], c=sorted_df["delta_loudness_sones"], cmap="coolwarm"
+        )
+        plt.colorbar(sc, label="delta_loudness_sones (A - B)")
+        plt.xlabel("Lon")
+        plt.ylabel("Lat")
+        plt.title("Mapa delta loudness por UTS")
+        plt.tight_layout()
+        plt.savefig(plots_dir / "map_delta_loudness.png", dpi=150)
+        plt.close()
+
+    return merged
+
+
 def main() -> None:
     args = parse_args()
     hop = args.hop or args.window
@@ -126,7 +259,7 @@ def main() -> None:
                 f"Detalle: {exc}"
             ) from exc
         df_seg = process_audios(audio_paths, args.window, hop, model, class_names)
-    if df_seg is None:
+    if df_seg is None and not args.compare_uts_a and not args.compare_uts_b:
         try:
             df_seg = load_csv(segment_csv)
         except SystemExit:
@@ -144,62 +277,120 @@ def main() -> None:
         df_gps = load_gps(gps_path)
         if not df_gps.empty:
             df_seg = sync_audio_gps(df_seg, df_gps)
+        df_seg = assign_uts_id(df_seg, args.uts_meters)
         df_seg.to_csv(segment_csv, index=False)
+    elif df_seg is not None:
+        df_seg = assign_uts_id(df_seg, args.uts_meters)
+
+    # Agregado por tramo UTS
+    uts_csv = config.RESULTS_DIR / "yamnet_psico_uts.csv"
+    df_uts = pd.DataFrame()
+    if df_seg is not None:
+        df_uts = aggregate_by_uts(df_seg)
+        if not df_uts.empty:
+            uts_csv.parent.mkdir(parents=True, exist_ok=True)
+            df_uts.to_csv(uts_csv, index=False)
 
     # Salidas GIS viven junto al resto de resultados de la corrida: results/<nombre_audio>/
     gis_ready = config.RESULTS_DIR / f"gis_ready_{run_slug}.csv"
     geo_points = config.RESULTS_DIR / "gis_points.geojson"
     geo_route = config.RESULTS_DIR / "gis_route.geojson"
-    export_csv_gis(df_seg, gis_ready)
-    export_geojson_points(df_seg, geo_points)
-    export_geojson_linestring(df_seg, geo_route)
-    plot_route_colored_by_descriptor(df_seg, "loudness_sones", config.PLOT_DIR / "route_loudness.png")
-    plot_route_colored_by_class(df_seg, config.PLOT_DIR / "route_classes.png")
+    if df_seg is not None:
+        export_csv_gis(df_seg, gis_ready)
+        export_geojson_points(df_seg, geo_points)
+        export_geojson_linestring(df_seg, geo_route)
+        # Plots de segmentos (legacy) para comparación
+        plots_segmentos = config.PLOT_DIR / "plots_segmentos"
+        plots_segmentos.mkdir(parents=True, exist_ok=True)
+        plot_route_colored_by_descriptor(df_seg, "loudness_sones", plots_segmentos / "route_loudness.png")
+        plot_route_colored_by_class(df_seg, plots_segmentos / "route_classes.png")
 
-    df = compute_iso_proxies(df_seg)
-    df = join_space_perceptual(df)
-    df = compute_spatial_clusters(df, method="kmeans")
-    df_rec = aggregate_by_recording(df)
+    # Preparar datasets segmento y UTS para psico/espacial
+    df_seg_iso = pd.DataFrame()
+    df_rec = pd.DataFrame()
+    if df_seg is not None:
+        df_seg_iso = compute_iso_proxies(df_seg)
+        df_seg_iso = join_space_perceptual(df_seg_iso)
+        df_seg_iso = compute_spatial_clusters(df_seg_iso, method="kmeans")
+        df_rec = aggregate_by_recording(df_seg_iso)
 
-    # Visualizaciones avanzadas
-    plot_perceptual_map(df, config.PLOT_DIR / "perceptual_map_clusters.png")
-    plot_spatial_heatmap(df, "loudness_sones", config.PLOT_DIR / "spatial_heatmap_loudness.png")
-    plot_spatial_clusters(df, config.PLOT_DIR / "spatial_clusters.png")
-    plot_spatial_perceptual(df, config.PLOT_DIR / "spatial_perceptual.png")
+    df_uts_iso = pd.DataFrame()
+    if not df_uts.empty:
+        df_uts_geo = prepare_uts_for_spatial(df_uts)
+        df_uts_iso = compute_iso_proxies(df_uts_geo)
+        df_uts_iso = join_space_perceptual(df_uts_iso)
+        df_uts_iso = compute_spatial_clusters(df_uts_iso, method="kmeans")
+
+    # Dataset principal de análisis: UTS si existe, si no segmentos
+    df_main_iso = df_uts_iso if not df_uts_iso.empty else df_seg_iso
+
+    # Visualizaciones avanzadas (segmentos) y nuevas (UTS)
+    if not df_uts_iso.empty:
+        plot_route_colored_by_descriptor(df_uts_iso, "loudness_sones", config.PLOT_DIR / "route_loudness.png")
+    elif not df_seg_iso.empty:
+        plot_route_colored_by_descriptor(df_seg_iso, "loudness_sones", config.PLOT_DIR / "route_loudness.png")
+
+    if not df_main_iso.empty:
+        plot_perceptual_map(df_main_iso, config.PLOT_DIR / "perceptual_map_clusters.png")
+        plot_spatial_heatmap(df_main_iso, "loudness_sones", config.PLOT_DIR / "spatial_heatmap_loudness.png")
+        plot_spatial_clusters(df_main_iso, config.PLOT_DIR / "spatial_clusters.png")
+        plot_spatial_perceptual(df_main_iso, config.PLOT_DIR / "spatial_perceptual.png")
+
+    if not df_seg_iso.empty:
+        plot_spatial_clusters(df_seg_iso, plots_segmentos / "spatial_clusters.png")
+
+    # Comparación entre dos recorridos por UTS, si se proporcionan rutas
+    if args.compare_uts_a and args.compare_uts_b:
+        try:
+            uts_a = pd.read_csv(args.compare_uts_a)
+            uts_b = pd.read_csv(args.compare_uts_b)
+        except Exception as exc:
+            raise SystemExit(f"No se pudieron leer CSV de comparación: {exc}") from exc
+        label_a = args.compare_uts_a.stem
+        label_b = args.compare_uts_b.stem
+        comp_dir = config.RESULTS_DIR / "plots_comparacion"
+        comp_csv = config.RESULTS_DIR / "comparacion_uts.csv"
+        compare_uts(uts_a, uts_b, label_a, label_b, comp_dir, comp_csv)
 
     # Exportaciones GeoJSON avanzadas
-    export_geojson_clusters(df, config.RESULTS_DIR / "gis_clusters.geojson")
-    export_geojson_heatmap(df, "loudness_sones", config.RESULTS_DIR / "gis_heatmap_loudness.geojson")
+    if not df_main_iso.empty:
+        export_geojson_clusters(df_main_iso, config.RESULTS_DIR / "gis_clusters.geojson")
+        export_geojson_heatmap(df_main_iso, "loudness_sones", config.RESULTS_DIR / "gis_heatmap_loudness.geojson")
 
-    config.RECORDINGS_CSV.parent.mkdir(parents=True, exist_ok=True)
-    df_rec.to_csv(config.RECORDINGS_CSV, index=False)
+    if not df_seg_iso.empty:
+        config.RECORDINGS_CSV.parent.mkdir(parents=True, exist_ok=True)
+        df_rec.to_csv(config.RECORDINGS_CSV, index=False)
 
-    plots: list[Path] = []
-    plots.append(plots_yamnet.plot_sources(df))
-    pc = plots_psico.plot_compare_recordings(df_rec)
-    if pc:
-        plots.append(pc)
-    plots.append(plots_iso.plot_correlations(df))
-    plots.append(plots_iso.plot_clusters(df))
-    plots.extend(plots_iso.plot_perceptual(df, df_rec))
-    sc = plots_iso.plot_soundscape(df_rec) if plots_iso.HAS_SOUNDSCAPY_PLOTS else plots_iso.plot_soundscape_fallback(df_rec)
-    if sc:
-        plots.append(sc)
-    lc = (
-        plots_iso.plot_location_comparisons(df_rec)
-        if plots_iso.HAS_SOUNDSCAPY_PLOTS
-        else plots_iso.plot_location_comparisons_fallback(df_rec)
-    )
-    if lc:
-        plots.append(lc)
+        plots: list[Path] = []
+        plots.append(plots_yamnet.plot_sources(df_seg_iso))
+        pc = plots_psico.plot_compare_recordings(df_rec)
+        if pc:
+            plots.append(pc)
+        plots.append(plots_iso.plot_correlations(df_seg_iso))
+        plots.append(plots_iso.plot_clusters(df_seg_iso))
+        plots.extend(plots_iso.plot_perceptual(df_seg_iso, df_rec))
+        sc = (
+            plots_iso.plot_soundscape(df_rec)
+            if plots_iso.HAS_SOUNDSCAPY_PLOTS
+            else plots_iso.plot_soundscape_fallback(df_rec)
+        )
+        if sc:
+            plots.append(sc)
+        lc = (
+            plots_iso.plot_location_comparisons(df_rec)
+            if plots_iso.HAS_SOUNDSCAPY_PLOTS
+            else plots_iso.plot_location_comparisons_fallback(df_rec)
+        )
+        if lc:
+            plots.append(lc)
 
-    print("\nAnalisis completado.")
-    print(f"CSV por recording: {config.RECORDINGS_CSV}")
-    print("Graficos generados:")
-    for p in plots:
-        print(f"  - {p}")
-    if not plots_iso.HAS_SOUNDSCAPY_PLOTS:
-        print("[aviso] SoundscapePlot/LocationComparisons no disponibles; se usaron graficos fallback.")
+        print("\nAnalisis completado.")
+        print(f"CSV por recording: {config.RECORDINGS_CSV}")
+        print("Graficos generados:")
+        for p in plots:
+            print(f"  - {p}")
+        if not plots_iso.HAS_SOUNDSCAPY_PLOTS:
+            print("[aviso] SoundscapePlot/LocationComparisons no disponibles; se usaron graficos fallback.")
 
 
 if __name__ == "__main__":

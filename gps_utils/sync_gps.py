@@ -16,6 +16,7 @@ def sync_audio_gps(audio_df: pd.DataFrame, gps_df: pd.DataFrame) -> pd.DataFrame
     df[["lat", "lon", "alt"]] = pd.NA
     df["gps_error_s"] = pd.NA
     df["gps_source"] = "none"
+    df["distancia_m"] = pd.NA
 
     if gps_df.empty or "t_seconds" not in gps_df.columns:
         return df
@@ -25,7 +26,7 @@ def sync_audio_gps(audio_df: pd.DataFrame, gps_df: pd.DataFrame) -> pd.DataFrame
         return df
 
     gps_times = gps_sorted["t_seconds"].to_numpy(dtype=float)
-    gps_coords = gps_sorted[["lat", "lon", "alt"]].to_numpy(dtype=float)
+    gps_coords = gps_sorted[["lat", "lon", "alt", "distancia_m"]].to_numpy(dtype=float)
 
     for idx, row in df.iterrows():
         t = row.get("Timestamp")
@@ -42,6 +43,7 @@ def sync_audio_gps(audio_df: pd.DataFrame, gps_df: pd.DataFrame) -> pd.DataFrame
                 df.at[idx, "lat"] = interp[0]
                 df.at[idx, "lon"] = interp[1]
                 df.at[idx, "alt"] = interp[2]
+                df.at[idx, "distancia_m"] = interp[3]
                 df.at[idx, "gps_error_s"] = 0.0
                 df.at[idx, "gps_source"] = "interpolated"
                 continue
@@ -58,6 +60,7 @@ def sync_audio_gps(audio_df: pd.DataFrame, gps_df: pd.DataFrame) -> pd.DataFrame
         df.at[idx, "lat"] = gps_coords[best_idx][0]
         df.at[idx, "lon"] = gps_coords[best_idx][1]
         df.at[idx, "alt"] = gps_coords[best_idx][2]
+        df.at[idx, "distancia_m"] = gps_coords[best_idx][3]
         df.at[idx, "gps_error_s"] = float(err)
         df.at[idx, "gps_source"] = "nearest"
     return df

@@ -5,6 +5,8 @@ from typing import List
 
 import pandas as pd
 
+from gps_utils.uts import compute_distance_m
+
 try:
     from tkinter import Tk, filedialog
 except Exception:  # pragma: no cover - entorno sin GUI
@@ -86,6 +88,21 @@ def _parse_kml(path: Path) -> List[dict]:
     return rows
 
 
+def _cumulative_distance(df: pd.DataFrame) -> pd.Series:
+    """Devuelve distancia acumulada en metros para cada fila."""
+    if df.empty or "lat" not in df or "lon" not in df:
+        return pd.Series(dtype=float)
+    lat = pd.to_numeric(df["lat"], errors="coerce")
+    lon = pd.to_numeric(df["lon"], errors="coerce")
+    dist = [0.0]
+    for i in range(1, len(df)):
+        if pd.isna(lat[i]) or pd.isna(lon[i]) or pd.isna(lat[i - 1]) or pd.isna(lon[i - 1]):
+            dist.append(dist[-1])
+            continue
+        dist.append(dist[-1] + compute_distance_m(lat[i - 1], lon[i - 1], lat[i], lon[i]))
+    return pd.Series(dist, index=df.index, dtype=float)
+
+
 def load_gps(path: Path) -> pd.DataFrame:
     """Carga datos GPS desde GeoJSON/GPX/KML y agrega tiempo relativo."""
     suffix = path.suffix.lower()
@@ -103,15 +120,16 @@ def load_gps(path: Path) -> pd.DataFrame:
         print("[aviso] No se encontraron puntos GPS.")
         return df
 
+    df["distancia_m"] = _cumulative_distance(df)
     df["timestamp_real"] = pd.to_datetime(df["timestamp_real"], errors="coerce")
     if df["timestamp_real"].isna().all():
         print("[aviso] GPS sin timestamps; no se puede sincronizar por tiempo.")
         df["t_seconds"] = pd.NA
-        return df
+        return df[["lat", "lon", "alt", "timestamp_real", "t_seconds", "distancia_m"]]
 
     first_ts = df["timestamp_real"].dropna().iloc[0]
     df["t_seconds"] = (df["timestamp_real"] - first_ts).dt.total_seconds()
-    return df[["lat", "lon", "alt", "timestamp_real", "t_seconds"]]
+    return df[["lat", "lon", "alt", "timestamp_real", "t_seconds", "distancia_m"]]
 
 
 def pick_gps_file(path: Path | None) -> Path | None:

@@ -25,6 +25,7 @@ def export_csv_gis(df: pd.DataFrame, path: Path) -> Path:
         "lat",
         "lon",
         "alt",
+        "distancia_m",
         "Recording",
         "loudness_sones",
         "sharpness_acum",
