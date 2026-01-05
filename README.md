@@ -118,6 +118,40 @@ results/plots/
 
 ---
 
+### Sincronizar GPS y exportar GIS
+
+1) Coloca tus rutas en `GPX/` (soporta `.gpx`, `.kml`, `.geojson`).  
+2) Ejecuta el pipeline principal desde la raíz del repo:
+
+```bash
+python main.py \
+  --files recordings/mi_audio.wav \
+  --gps GPX/mi_ruta.gpx \
+  --window 3 --hop 3 \
+  --uts-meters 30
+```
+
+El proceso:
+- segmenta y clasifica con YAMNet
+- calcula descriptores psicoacústicos
+- sincroniza audio con la ruta GPS
+- agrega por tramos UTS (30 m por defecto)
+- exporta:
+  - `results/<run>/gis_ready_<run>.csv` (CSV listo para GIS)
+  - `results/<run>/gis_ready_<label>_uts.csv` (agregado por tramo)
+  - GeoJSON: puntos, línea y heatmap (`gis_points.geojson`, `gis_route.geojson`, `gis_heatmap_loudness.geojson`)
+  - CSVs segmentados/UTS (`yamnet_psico_segmentado.csv`, `yamnet_psico_uts.csv`)
+
+Para comparar dos recorridos (ej. mañana vs noche) usa:
+
+```bash
+python main.py \
+  --compare-uts-a results/Bici_9_am_1min/yamnet_psico_uts.csv \
+  --compare-uts-b results/Bici_21_30_seg/yamnet_psico_uts.csv
+```
+
+---
+
 ## 📊 Resultados esperados
 
 * **CSV completo** con:
