@@ -285,11 +285,17 @@ def main() -> None:
     # Agregado por tramo UTS
     uts_csv = config.RESULTS_DIR / "yamnet_psico_uts.csv"
     df_uts = pd.DataFrame()
+    df_uts_geo = pd.DataFrame()
+    df_uts_gis = pd.DataFrame()
     if df_seg is not None:
         df_uts = aggregate_by_uts(df_seg)
         if not df_uts.empty:
             uts_csv.parent.mkdir(parents=True, exist_ok=True)
             df_uts.to_csv(uts_csv, index=False)
+            df_uts_geo = prepare_uts_for_spatial(df_uts)
+            df_uts_gis = df_uts_geo.copy()
+            export_csv_gis(df_uts_gis, config.RESULTS_DIR / "gis_ready_uts.csv")
+            export_geojson_points(df_uts_gis, config.RESULTS_DIR / "gis_points_uts.geojson")
 
     # Salidas GIS viven junto al resto de resultados de la corrida: results/<nombre_audio>/
     gis_ready = config.RESULTS_DIR / f"gis_ready_{run_slug}.csv"
@@ -316,7 +322,8 @@ def main() -> None:
 
     df_uts_iso = pd.DataFrame()
     if not df_uts.empty:
-        df_uts_geo = prepare_uts_for_spatial(df_uts)
+        if df_uts_geo.empty:
+            df_uts_geo = prepare_uts_for_spatial(df_uts)
         df_uts_iso = compute_iso_proxies(df_uts_geo)
         df_uts_iso = join_space_perceptual(df_uts_iso)
         df_uts_iso = compute_spatial_clusters(df_uts_iso, method="kmeans")
