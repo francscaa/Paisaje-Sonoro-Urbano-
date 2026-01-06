@@ -12,6 +12,7 @@ from config import DESCRIPTORS
 
 def plot_sources(df: pd.DataFrame) -> Path:
     out_path = config.PLOT_DIR / "yamnet_fuentes_scatter.png"
+    n_points = len(df)
     plt.figure(figsize=(12, 6))
     factor, labels = pd.factorize(df["Clase_YAMNet"])
     scatter = plt.scatter(df["Timestamp"], df["Probabilidad"], c=factor, cmap="tab20", alpha=0.8)
@@ -19,7 +20,8 @@ def plot_sources(df: pd.DataFrame) -> Path:
     plt.legend(handles, labels, loc="best", title="Clase YAMNet", fontsize="small", ncol=2)
     plt.xlabel("Tiempo (s)")
     plt.ylabel("Probabilidad")
-    plt.title("Clases YAMNet en el tiempo")
+    plt.title("Clases YAMNet a lo largo del tiempo")
+    plt.suptitle(f"Unidad: segmentos | N={n_points} | Color: clase dominante YAMNet", fontsize=9)
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.savefig(out_path, dpi=150)
@@ -38,7 +40,8 @@ def plot_fuentes_loudness(df_seg: pd.DataFrame) -> Path:
     (config.RESULTS_DIR / "yamnet_fuentes_psico.csv").parent.mkdir(parents=True, exist_ok=True)
     df_fuentes.to_csv(config.RESULTS_DIR / "yamnet_fuentes_psico.csv")
     df_fuentes.head(10).plot(kind="bar", figsize=(14, 6))
-    plt.title("Fuentes YAMNet ordenadas por loudness (top 10)")
+    plt.title("Top 10 clases YAMNet por loudness promedio")
+    plt.suptitle("Unidad: segmentos | Barras: promedio de descriptores psicoacústicos por clase", fontsize=9)
     plt.tight_layout()
     plt.savefig(out_path, dpi=150)
     plt.close()

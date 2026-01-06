@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 from typing import Iterable
 
@@ -13,7 +14,7 @@ from analysis.spatial_perceptual import compute_perceptual_space, compute_spatia
 from audio_processing.load_audio import select_files
 from audio_processing.pipeline import process_audios
 from audio_processing.yamnet_classifier import load_yamnet_model
-from gps_utils.load_gps import load_gps, pick_gps_file
+from gps_utils.load_gps import load_gps, pick_gps_file, pick_gps_files
 from gps_utils.sync_gps import sync_audio_gps
 from gps_utils.uts import aggregate_by_uts, assign_uts_id
 from visualization import plots_iso, plots_psico, plots_yamnet
@@ -26,6 +27,9 @@ from visualization.plot_advanced import (
     plot_spatial_perceptual,
 )
 from visualization.plot_spatial import plot_route_colored_by_class, plot_route_colored_by_descriptor
+from visualization.plots_correlacion import parse_time_group, plot_correlation_matrices
+from visualization.plots_comparisons import plot_distributions_by_time
+from visualization.plots_longitudinal import plot_longitudinal_by_time
 
 
 def parse_args() -> argparse.Namespace:
@@ -61,6 +65,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--gps",
         type=Path,
+        nargs="*",
         help="Ruta a archivo GeoJSON/GPX/KML para sincronizar GPS con segmentos (opcional).",
     )
     parser.add_argument(
@@ -110,7 +115,20 @@ def resolve_model_handle(model_handle: str, hub_cache: Path) -> str:
 def pick_run_name(audio_paths: Iterable[Path] | None, csv_path: Path | None) -> str:
     """Usa el nombre del audio (o CSV) para crear la carpeta de resultados."""
     if audio_paths:
-        first = next(iter(audio_paths), None)
+        audio_list = list(audio_paths)
+        if len(audio_list) > 1:
+            base = "comparacion"
+            existing = []
+            if config.RESULTS_ROOT.exists():
+                existing = [p.name for p in config.RESULTS_ROOT.glob(f"{base}_*") if p.is_dir()]
+            nums = []
+            for name in existing:
+                m = re.match(rf"{base}_(\d+)$", name)
+                if m:
+                    nums.append(int(m.group(1)))
+            next_num = max(nums) + 1 if nums else 1
+            return f"{base}_{next_num}"
+        first = audio_list[0] if audio_list else None
         if first:
             return first.stem
     if csv_path:
@@ -218,6 +236,31 @@ def compare_uts(
     plt.tight_layout()
     plt.savefig(plots_dir / "delta_vs_distancia.png", dpi=150)
     plt.close()
+    # (1b) Curvas originales por recorrido (ej. loudness)
+    loud_a = f"loudness_sones_mean{suffixes[0]}"
+    loud_b = f"loudness_sones_mean{suffixes[1]}"
+    if loud_a in sorted_df and loud_b in sorted_df:
+        plt.figure(figsize=(8, 5))
+        plt.plot(
+            sorted_df["distancia_m_ref"],
+            sorted_df[loud_a],
+            marker="o",
+            label=f"loudness_sones ({label_a})",
+        )
+        plt.plot(
+            sorted_df["distancia_m_ref"],
+            sorted_df[loud_b],
+            marker="o",
+            linestyle="--",
+            label=f"loudness_sones ({label_b})",
+        )
+        plt.xlabel("Distancia (m, ref)")
+        plt.ylabel("Loudness (sones)")
+        plt.title(f"Loudness por UTS: {label_a} vs {label_b}")
+        plt.legend(fontsize="small")
+        plt.tight_layout()
+        plt.savefig(plots_dir / "loudness_vs_distancia.png", dpi=150)
+        plt.close()
 
     # (2) Mapa delta_loudness
     if "lat_mean_avg" in sorted_df and "lon_mean_avg" in sorted_df:
@@ -241,6 +284,7 @@ def main() -> None:
     hop = args.hop or args.window
 
     df_seg = None
+    compare_only = args.compare_uts_a and args.compare_uts_b and not args.files and args.csv is None
     audio_paths: list[Path] | None = None
     if args.files is not None:
         audio_paths = select_files(args.files if len(args.files) > 0 else None)
@@ -272,15 +316,39 @@ def main() -> None:
             df_seg = process_audios(audio_paths, args.window, hop, model, class_names)
 
     run_slug = config.RUN_DIR.name
-    gps_path = pick_gps_file(args.gps)
-    if gps_path:
-        df_gps = load_gps(gps_path)
-        if not df_gps.empty:
-            df_seg = sync_audio_gps(df_seg, df_gps)
-        df_seg = assign_uts_id(df_seg, args.uts_meters)
+    gps_paths: list[Path] = []
+    if not compare_only:
+        if args.gps is None:
+            gps_paths = pick_gps_files(None)
+        else:
+            gps_paths = list(args.gps)
+
+    if df_seg is not None:
+        if gps_paths:
+            if "Recording" not in df_seg.columns:
+                print("[aviso] No hay columna Recording; se aplicará el primer GPS a todos los segmentos.")
+                gps_paths = gps_paths[:1]
+            recordings = list(dict.fromkeys(df_seg["Recording"])) if "Recording" in df_seg else [None]
+            if len(gps_paths) < len(recordings):
+                print(f"[aviso] Hay {len(recordings)} recordings pero solo {len(gps_paths)} GPS; se reutiliza el último GPS.")
+            if len(gps_paths) > len(recordings):
+                print(f"[aviso] Hay más GPS ({len(gps_paths)}) que recordings ({len(recordings)}); se ignorarán los extra.")
+            synced_parts = []
+            for idx, rec in enumerate(recordings):
+                gp_idx = min(idx, len(gps_paths) - 1)
+                gps_path = gps_paths[gp_idx]
+                part = df_seg[df_seg["Recording"] == rec] if rec is not None else df_seg
+                df_gps = load_gps(gps_path)
+                if not df_gps.empty:
+                    part = sync_audio_gps(part, df_gps)
+                else:
+                    print(f"[aviso] GPS vacío para {gps_path}, se mantienen coordenadas vacías en Recording={rec}.")
+                part = assign_uts_id(part, args.uts_meters)
+                synced_parts.append(part)
+            df_seg = pd.concat(synced_parts).sort_index()
+        else:
+            df_seg = assign_uts_id(df_seg, args.uts_meters)
         df_seg.to_csv(segment_csv, index=False)
-    elif df_seg is not None:
-        df_seg = assign_uts_id(df_seg, args.uts_meters)
 
     # Agregado por tramo UTS
     uts_csv = config.RESULTS_DIR / "yamnet_psico_uts.csv"
@@ -346,6 +414,43 @@ def main() -> None:
     if not df_seg_iso.empty:
         plot_spatial_clusters(df_seg_iso, plots_segmentos / "spatial_clusters.png")
 
+    # Correlaciones por momento del día (prioriza UTS)
+    corr_cols = ["loudness_sones", "sharpness_acum", "roughness_asper", "tonality_tnr_db", "P_iso", "E_iso"]
+    corr_df = None
+    if not df_uts_iso.empty:
+        corr_df = df_uts_iso
+    elif not df_main_iso.empty:
+        corr_df = df_main_iso
+    elif not df_uts.empty:
+        corr_df = df_uts
+    elif df_seg is not None:
+        corr_df = df_seg
+        print("[aviso] Correlaciones con segmentos temporales (no UTS); puede haber sesgo por velocidad.")
+    if corr_df is not None:
+        plot_correlation_matrices(corr_df, run_slug, corr_cols, config.PLOT_DIR / "correlations")
+
+    # Distribuciones por momento del día (UTS si existe)
+    dist_df = None
+    if not df_uts.empty:
+        dist_df = df_uts
+    elif df_uts_iso is not None and not df_uts_iso.empty:
+        dist_df = df_uts_iso
+    if dist_df is not None:
+        plot_distributions_by_time(
+            dist_df,
+            ["loudness_sones", "sharpness_acum", "roughness_asper", "tonality_tnr_db"],
+            run_slug,
+            config.PLOT_DIR / "comparisons",
+            include_unknown=False,
+        )
+        plot_longitudinal_by_time(
+            dist_df,
+            "loudness_sones",
+            run_slug,
+            config.PLOT_DIR / "comparisons",
+            include_unknown=False,
+        )
+
     # Comparación entre dos recorridos por UTS, si se proporcionan rutas
     if args.compare_uts_a and args.compare_uts_b:
         try:
@@ -353,8 +458,11 @@ def main() -> None:
             uts_b = pd.read_csv(args.compare_uts_b)
         except Exception as exc:
             raise SystemExit(f"No se pudieron leer CSV de comparación: {exc}") from exc
-        label_a = args.compare_uts_a.stem
-        label_b = args.compare_uts_b.stem
+        label_a = args.compare_uts_a.parent.name or args.compare_uts_a.stem
+        label_b = args.compare_uts_b.parent.name or args.compare_uts_b.stem
+        if label_a == label_b:
+            label_a = f"{label_a}_a"
+            label_b = f"{label_b}_b"
         comp_dir = config.RESULTS_DIR / "plots_comparacion"
         comp_csv = config.RESULTS_DIR / "comparacion_uts.csv"
         compare_uts(uts_a, uts_b, label_a, label_b, comp_dir, comp_csv)

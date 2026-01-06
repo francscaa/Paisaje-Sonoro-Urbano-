@@ -14,13 +14,16 @@ def plot_perceptual_map(df: pd.DataFrame, path: Path) -> Path:
         return path
     path.parent.mkdir(parents=True, exist_ok=True)
     color = df["cluster_id"] if "cluster_id" in df.columns else df.get("Probabilidad")
+    unidad = "UTS" if "uts_id" in df.columns else "segmentos"
+    n_points = len(df)
     plt.figure(figsize=(8, 6))
     sc = plt.scatter(df["P_iso"], df["E_iso"], c=color, cmap="tab10", alpha=0.7)
     plt.xlabel("P_iso (proxy)")
     plt.ylabel("E_iso (proxy)")
-    plt.title("Mapa perceptual P/E coloreado por cluster")
+    plt.title("Mapa perceptual: valencia (P_iso) vs activación (E_iso)")
+    plt.suptitle(f"Unidad: {unidad} | N={n_points} | Color: {'cluster_id' if 'cluster_id' in df.columns else 'Probabilidad YAMNet'}", fontsize=9)
     if color is not None:
-        plt.colorbar(sc, label="cluster_id" if "cluster_id" in df.columns else "Probabilidad")
+        plt.colorbar(sc, label="Cluster" if "cluster_id" in df.columns else "Probabilidad YAMNet")
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.savefig(path, dpi=150)
@@ -34,14 +37,17 @@ def plot_spatial_heatmap(df: pd.DataFrame, value: str, path: Path) -> Path:
     if data.empty or value not in df.columns:
         return path
     path.parent.mkdir(parents=True, exist_ok=True)
+    unidad = "UTS" if "uts_id" in df.columns else "segmentos"
+    n_points = len(data)
     plt.figure(figsize=(8, 6))
     ax = plt.gca()
     ax.ticklabel_format(useOffset=False, style="plain")  # Mostrar coordenadas completas sin offset científico
     sns.kdeplot(data=data, x="lon", y="lat", weights=data[value], fill=True, cmap="magma", thresh=0.05, alpha=0.8)
     plt.scatter(data["lon"], data["lat"], s=10, c="white", alpha=0.3)
-    plt.xlabel("Lon")
-    plt.ylabel("Lat")
-    plt.title(f"Heatmap espacial de {value}")
+    plt.xlabel("Longitud")
+    plt.ylabel("Latitud")
+    plt.title(f"Hotspots de {value} sobre la ruta")
+    plt.suptitle(f"Unidad: {unidad} | N puntos={n_points} | Color: densidad ponderada por {value}", fontsize=9)
     plt.tight_layout()
     plt.savefig(path, dpi=150)
     plt.close()
@@ -55,13 +61,16 @@ def plot_spatial_clusters(df: pd.DataFrame, path: Path) -> Path:
         return path
     path.parent.mkdir(parents=True, exist_ok=True)
     labels = data["cluster_id"]
+    unidad = "UTS" if "uts_id" in df.columns else "segmentos"
+    n_points = len(data)
     plt.figure(figsize=(8, 6))
     sc = plt.scatter(data["lon"], data["lat"], c=labels, cmap="tab20", s=30, alpha=0.9)
     plt.plot(data["lon"], data["lat"], color="gray", alpha=0.3, linewidth=1)
-    plt.colorbar(sc, label="cluster_id")
-    plt.xlabel("Lon")
-    plt.ylabel("Lat")
-    plt.title("Clusters espaciales")
+    plt.colorbar(sc, label="ID de cluster")
+    plt.xlabel("Longitud")
+    plt.ylabel("Latitud")
+    plt.title("Clusters espaciales sobre la ruta")
+    plt.suptitle(f"Unidad: {unidad} | N={n_points} | Color: ID de cluster (k-means)", fontsize=9)
     plt.tight_layout()
     plt.savefig(path, dpi=150)
     plt.close()
@@ -75,13 +84,16 @@ def plot_spatial_perceptual(df: pd.DataFrame, path: Path) -> Path:
         return path
     path.parent.mkdir(parents=True, exist_ok=True)
     pe_norm = np.sqrt(np.square(data["P_iso"]) + np.square(data["E_iso"]))
+    unidad = "UTS" if "uts_id" in df.columns else "segmentos"
+    n_points = len(data)
     plt.figure(figsize=(8, 6))
     sc = plt.scatter(data["lon"], data["lat"], c=pe_norm, cmap="viridis", s=30, alpha=0.9)
     plt.plot(data["lon"], data["lat"], color="gray", alpha=0.3, linewidth=1)
-    plt.colorbar(sc, label="||P/E||")
-    plt.xlabel("Lon")
-    plt.ylabel("Lat")
-    plt.title("Mapa espacial perceptual (magnitud P/E)")
+    plt.colorbar(sc, label="Magnitud perceptual ||P,E||")
+    plt.xlabel("Longitud")
+    plt.ylabel("Latitud")
+    plt.title("Intensidad perceptual en el espacio (magnitud P/E)")
+    plt.suptitle(f"Unidad: {unidad} | N={n_points} | Color: tamaño del vector P/E", fontsize=9)
     plt.tight_layout()
     plt.savefig(path, dpi=150)
     plt.close()

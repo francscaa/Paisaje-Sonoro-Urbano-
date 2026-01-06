@@ -132,15 +132,21 @@ def load_gps(path: Path) -> pd.DataFrame:
     return df[["lat", "lon", "alt", "timestamp_real", "t_seconds", "distancia_m"]]
 
 
-def pick_gps_file(path: Path | None) -> Path | None:
-    """Devuelve la ruta GPS proporcionada o abre un selector si es posible."""
-    if path:
-        return path
+def pick_gps_files(paths: list[Path] | None) -> list[Path]:
+    """Devuelve las rutas GPS proporcionadas o abre un selector (multi) si es posible."""
+    if paths:
+        return paths
     if Tk is None or filedialog is None:
-        return None
+        return []
     Tk().withdraw()
-    picked = filedialog.askopenfilename(
-        title="Selecciona archivo GPS (GeoJSON/GPX/KML)",
+    picked = filedialog.askopenfilenames(
+        title="Selecciona uno o varios archivos GPS (GeoJSON/GPX/KML)",
         filetypes=[("GeoJSON", "*.geojson *.json"), ("GPX", "*.gpx"), ("KML", "*.kml"), ("Todos", "*.*")],
     )
-    return Path(picked) if picked else None
+    return [Path(p) for p in picked] if picked else []
+
+
+# Compatibilidad: conserva pick_gps_file para llamadas legacy (toma el primero)
+def pick_gps_file(path: Path | None) -> Path | None:
+    paths = pick_gps_files([path] if path else None)
+    return paths[0] if paths else None

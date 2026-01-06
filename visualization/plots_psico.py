@@ -20,7 +20,8 @@ def plot_descriptor_bars(df: pd.DataFrame) -> Path:
     )
     top.plot(kind="bar", figsize=(12, 6))
     plt.ylabel("Valor promedio")
-    plt.title("Fuentes (YAMNet) ordenadas por loudness (top 10) con otros descriptores")
+    plt.title("Top 10 clases YAMNet por loudness con descriptores psicoacústicos")
+    plt.suptitle(f"Unidad: segmentos | N clases={len(top)} | Barras: promedio por descriptor", fontsize=9)
     plt.tight_layout()
     plt.savefig(out_path, dpi=150)
     plt.close()
@@ -33,14 +34,16 @@ def plot_compare_recordings(df_rec: pd.DataFrame) -> Path | None:
     out_path = config.PLOT_DIR / "comparacion_recordings_psico.png"
     x = np.arange(len(df_rec["Recording"]))
     width = 0.2
+    unidad = "Recording (recorridos completos)"
     plt.figure(figsize=(10, 6))
     for i, d in enumerate(DESCRIPTORS):
         if d in df_rec.columns:
             plt.bar(x + i * width, df_rec[d], width=width, label=d)
     plt.xticks(x + width * (len(DESCRIPTORS) - 1) / 2, df_rec["Recording"], rotation=45, ha="right")
     plt.ylabel("Valor promedio")
-    plt.title("Comparacion de descriptores psicoacusticos por audio")
-    plt.legend()
+    plt.title("Comparación de descriptores psicoacústicos por recorrido")
+    plt.suptitle(f"Unidad: {unidad} | N recorridos={df_rec.shape[0]} | Color: descriptor", fontsize=9)
+    plt.legend(title="Descriptor", fontsize="small")
     plt.tight_layout()
     plt.savefig(out_path, dpi=150)
     plt.close()
