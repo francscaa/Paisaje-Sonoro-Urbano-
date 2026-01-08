@@ -71,7 +71,7 @@ git clone https://github.com/francscaa/Paisaje-Sonoro-Urbano-.git
 cd Paisaje-Sonoro-Urbano-
 ````
 
-### 2️⃣ Crear entorno virtual (Python 3.10 recomendado)
+### 2️⃣ Crear y activar entorno virtual (Python 3.10 recomendado)
 
 #### macOS / Linux
 
@@ -90,8 +90,31 @@ entorno\Scripts\activate
 ### 3️⃣ Instalar dependencias
 
 ```bash
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
+
+### 4️⃣ Arranque rápido en otro PC
+
+```bash
+# 1. Activar entorno (usa el bloque según tu SO)
+# macOS/Linux
+source entorno/bin/activate
+# Windows (PowerShell)
+# .\\entorno\\Scripts\\activate
+
+# 2. Ejecutar pipeline con un audio y ruta GPX
+python main.py \
+  --files recordings/mi_audio.wav \
+  --gps GPX/mi_ruta.gpx \
+  --window 3 --hop 3 \
+  --uts-meters 30
+
+# 3. Resultados principales
+ls results/<run>/
+```
+
+> Si cambias de máquina, basta con repetir pasos 1–3 y ejecutar `main.py` con tus rutas/audio. Si TensorFlow da problemas en Mac ARM, instala la variante para Apple Silicon siguiendo la guía oficial.
 
 ---
 
