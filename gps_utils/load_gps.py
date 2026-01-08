@@ -54,6 +54,32 @@ def _parse_gpx(path: Path) -> List[dict]:
                         "timestamp_real": point.time,
                     }
                 )
+    if rows:
+        return rows
+
+    # Fallback para GPX con namespaces/tags no estandar donde gpxpy no detecta tracks.
+    import xml.etree.ElementTree as ET
+
+    try:
+        root = ET.parse(path).getroot()
+    except Exception:
+        return rows
+    for pt in root.iter():
+        if not pt.tag.lower().endswith("trkpt"):
+            continue
+        lat = pt.attrib.get("lat")
+        lon = pt.attrib.get("lon")
+        if lat is None or lon is None:
+            continue
+        alt = None
+        ts = None
+        for child in pt:
+            tag = child.tag.lower()
+            if tag.endswith("ele"):
+                alt = child.text
+            elif tag.endswith("time"):
+                ts = child.text
+        rows.append({"lat": lat, "lon": lon, "alt": alt, "timestamp_real": ts})
     return rows
 
 

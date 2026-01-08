@@ -86,6 +86,11 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Ruta a yamnet_psico_uts.csv del recorrido B (ej: noche).",
     )
+    parser.add_argument(
+        "--debug-plots",
+        action="store_true",
+        help="Genera plots de depuracion/legacy (segmentos). Si no se indica, se omiten.",
+    )
     return parser.parse_args()
 
 
@@ -374,10 +379,11 @@ def main() -> None:
         export_geojson_points(df_seg, geo_points)
         export_geojson_linestring(df_seg, geo_route)
         # Plots de segmentos (legacy) para comparación
-        plots_segmentos = config.PLOT_DIR / "plots_segmentos"
-        plots_segmentos.mkdir(parents=True, exist_ok=True)
-        plot_route_colored_by_descriptor(df_seg, "loudness_sones", plots_segmentos / "route_loudness.png")
-        plot_route_colored_by_class(df_seg, plots_segmentos / "route_classes.png")
+        if args.debug_plots:
+            plots_segmentos = config.PLOT_DIR / "plots_segmentos"
+            plots_segmentos.mkdir(parents=True, exist_ok=True)
+            plot_route_colored_by_descriptor(df_seg, "loudness_sones", plots_segmentos / "route_loudness.png")
+            plot_route_colored_by_class(df_seg, plots_segmentos / "route_classes.png")
 
     # Preparar datasets segmento y UTS para psico/espacial
     df_seg_iso = pd.DataFrame()
@@ -411,11 +417,12 @@ def main() -> None:
         plot_spatial_clusters(df_main_iso, config.PLOT_DIR / "spatial_clusters.png")
         plot_spatial_perceptual(df_main_iso, config.PLOT_DIR / "spatial_perceptual.png")
 
-    if not df_seg_iso.empty:
+    if not df_seg_iso.empty and args.debug_plots:
         plot_spatial_clusters(df_seg_iso, plots_segmentos / "spatial_clusters.png")
 
     # Correlaciones por momento del día (prioriza UTS)
-    corr_cols = ["loudness_sones", "sharpness_acum", "roughness_asper", "tonality_tnr_db", "P_iso", "E_iso"]
+    # Excluimos tonality_tnr_db en gráficos por falta de variabilidad en este caso de estudio.
+    corr_cols = ["loudness_sones", "sharpness_acum", "roughness_asper", "P_iso", "E_iso"]
     corr_df = None
     if not df_uts_iso.empty:
         corr_df = df_uts_iso
@@ -438,7 +445,7 @@ def main() -> None:
     if dist_df is not None:
         plot_distributions_by_time(
             dist_df,
-            ["loudness_sones", "sharpness_acum", "roughness_asper", "tonality_tnr_db"],
+            ["loudness_sones", "sharpness_acum", "roughness_asper"],
             run_slug,
             config.PLOT_DIR / "comparisons",
             include_unknown=False,
@@ -499,10 +506,21 @@ def main() -> None:
         if lc:
             plots.append(lc)
 
+        annex_dir = config.PLOT_DIR / "annex"
+        annex_dir.mkdir(parents=True, exist_ok=True)
+        moved: list[Path] = []
+        for p in plots:
+            dest = annex_dir / p.name
+            try:
+                p.rename(dest)
+                moved.append(dest)
+            except Exception:
+                moved.append(p)
+
         print("\nAnalisis completado.")
         print(f"CSV por recording: {config.RECORDINGS_CSV}")
         print("Graficos generados:")
-        for p in plots:
+        for p in moved:
             print(f"  - {p}")
         if not plots_iso.HAS_SOUNDSCAPY_PLOTS:
             print("[aviso] SoundscapePlot/LocationComparisons no disponibles; se usaron graficos fallback.")
